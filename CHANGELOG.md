@@ -5,6 +5,28 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.1.0] - 2026-07-02
+
+### Added
+
+- **Auto-detected pinentry-dms support**. At load the plugin checks whether
+  [`pinentry-dms`](https://github.com/tdesaules/pinentry-dms) is wired up
+  end-to-end (the `pinentryDms` DMS plugin enabled **and** a pinentry directive
+  pointing at the `pinentry-dms` binary — either gopass's `[age] pinentry` in
+  `~/.config/gopass/config` or gpg-agent's `pinentry-program` in
+  `~/.gnupg/gpg-agent.conf`). When both are true it
+  switches to pinentry-dms mode: it stops injecting `GOPASS_AGE_PASSWORD`, lets
+  gopass drive `pinentry-dms` (native DMS modal), and relies on the age agent to
+  cache the unlock across restarts. When either condition is missing it falls
+  back to the existing builtin passphrase dialog, so behavior is unchanged for
+  users without pinentry-dms. Detection is logged as
+  `GopassDms: pinentry-dms detection plugin=… gopass=… => …`.
+
+### Notes
+
+- pinentry-dms requires gopass's age backend (the same backend this plugin
+  already targets). The GPG backend remains unsupported.
+
 ## [2.0.0] - 2026-07-01
 
 ### Changed
@@ -102,6 +124,7 @@ Iterative development builds prior to the first stable release.
 - Multiple refactors of the plugin lifecycle and the async refresh mechanism
   (auto-refresh, manual refresh, request-launcher-update wiring).
 
+[2.1.0]: https://github.com/tdesaules/gopass-dms/releases/tag/v2.1.0
 [2.0.0]: https://github.com/tdesaules/gopass-dms/releases/tag/v2.0.0
 [1.1.0]: https://github.com/tdesaules/gopass-dms/releases/tag/v1.1.0
 [1.0.0]: https://github.com/tdesaules/gopass-dms/releases/tag/v1.0.0

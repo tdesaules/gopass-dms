@@ -25,6 +25,13 @@ QtObject {
     // In-memory passphrase cache (session only, never persisted). Injected as
     // GOPASS_AGE_PASSWORD into gopass show so pinentry is never invoked.
     property string _passphrase: ""
+
+    // True when pinentry-dms is wired up end-to-end (the pinentryDms DMS plugin
+    // is enabled AND gopass's age pinentry points at the pinentry-dms binary).
+    // When set, the plugin lets gopass drive pinentry-dms instead of capturing
+    // the passphrase itself and injecting GOPASS_AGE_PASSWORD. Falls back to the
+    // builtin flow otherwise.
+    property bool _pinentryDmsAvailable: false
     property string _pendingSecret: ""
     property string _pendingField: ""
     property string _pendingKind: ""
@@ -50,6 +57,7 @@ QtObject {
             secrets = cached
 
         refreshSecrets()
+        _detectPinentryDms()
     }
 
     onTriggerChanged: {
@@ -62,6 +70,65 @@ QtObject {
     function _refreshLauncher() {
         if (pluginService)
             pluginService.requestLauncherUpdate(pluginId)
+    }
+
+    // Detects whether pinentry-dms is wired up end-to-end so the plugin can let
+    // gopass drive it instead of injecting GOPASS_AGE_PASSWORD. Requires BOTH:
+    //   C1 — the pinentryDms DMS plugin is enabled (plugin_settings.json)
+    //   C2 — a pinentry directive points at pinentry-dms: either gopass's
+    //        [age] pinentry (~/.config/gopass/config) or gpg-agent's
+    //        pinentry-program (~/.gnupg/gpg-agent.conf). The gopass age agent
+    //        reads the latter even without a running gpg-agent.
+    // Reading only C1 would risk a broken state (no env var but gopass not
+    // actually configured for pinentry-dms).
+    function _detectPinentryDms() {
+        var proc = detectProcessComponent.createObject(root)
+        proc.running = true
+    }
+
+    function _finishDetection(raw) {
+        var psText = ""
+        var gcText = ""
+        var psIdx = raw.indexOf("<PS>")
+        var gcIdx = raw.indexOf("<GC>")
+        if (psIdx !== -1 && gcIdx !== -1) {
+            psText = raw.substring(psIdx + 4, gcIdx)
+            gcText = raw.substring(gcIdx + 4)
+        }
+
+        var c1 = false
+        try {
+            var obj = JSON.parse(psText)
+            if (obj && obj.pinentryDms && obj.pinentryDms.enabled === true)
+                c1 = true
+        } catch (e) {
+            c1 = false
+        }
+
+        var c2 = /pinentry(?:-program)?\s+=?\s*\S*pinentry-dms/i.test(gcText)
+
+        _pinentryDmsAvailable = (c1 && c2)
+        console.info("GopassDms: pinentry-dms detection plugin=" + c1
+                     + " gopass=" + c2 + " => " + _pinentryDmsAvailable)
+    }
+
+    property Component detectProcessComponent: Component {
+        Process {
+            command: ["sh", "-c",
+                "echo '<PS>'; " +
+                "cat \"$HOME/.config/DankMaterialShell/plugin_settings.json\" 2>/dev/null || true; " +
+                "echo '<GC>'; " +
+                "cat \"${GOPASS_CONFIG:-$HOME/.config/gopass/config}\" 2>/dev/null || true; " +
+                "cat \"$HOME/.gnupg/gpg-agent.conf\" 2>/dev/null || true"
+            ]
+            stdout: StdioCollector {
+                id: collector
+            }
+            onExited: (exitCode) => {
+                root._finishDetection(collector.text)
+                destroy()
+            }
+        }
     }
 
     function refreshSecrets() {
@@ -363,7 +430,10 @@ QtObject {
         _pendingSecret = secretPath
         _pendingField = field
         _pendingKind = kind
-        if (_passphrase !== "")
+        // pinentry-dms mode: gopass handles unlocking; no dialog, no cache.
+        if (_pinentryDmsAvailable)
+            _runCopy()
+        else if (_passphrase !== "")
             _runCopy()
         else
             _openPassphraseDialog()
@@ -400,6 +470,23 @@ QtObject {
 
     function _onCopyFailure(secretPath, fieldName, kind, exitCode, stderrText) {
         var isDecrypt = exitCode === 11 || (stderrText && stderrText.toLowerCase().indexOf("ecrypt") !== -1)
+
+        // pinentry-dms mode: no passphrase cache/dialog on our side. gopass +
+        // pinentry-dms handle unlocking and retry; we only surface the result.
+        if (root._pinentryDmsAvailable) {
+            if (root._passphraseDialog && root._passphraseDialog.visible)
+                root._passphraseDialog.hide()
+            if (isDecrypt)
+                root._showToast("Copy failed: decryption cancelled or failed")
+            else if (kind === "totp")
+                root._showToast("No TOTP configured in " + secretPath)
+            else if (fieldName !== "")
+                root._showToast("No " + fieldName + " in " + secretPath)
+            else
+                root._showToast("Copy failed (exit " + exitCode + ")")
+            return
+        }
+
         if (isDecrypt) {
             _passphrase = ""
             if (_passphraseDialog && _passphraseDialog.visible)
@@ -427,9 +514,11 @@ QtObject {
             property string fieldName: ""
             property string kind: ""
             property string stderrText: ""
-            environment: ({
-                "GOPASS_AGE_PASSWORD": root._passphrase
-            })
+            // In pinentry-dms mode, do NOT inject GOPASS_AGE_PASSWORD: it
+            // bypasses pinentry, and we want gopass to call pinentry-dms.
+            environment: root._pinentryDmsAvailable
+                ? ({})
+                : ({ "GOPASS_AGE_PASSWORD": root._passphrase })
             stderr: SplitParser {
                 onRead: line => {
                     if (line)
@@ -452,7 +541,7 @@ QtObject {
         _pendingSecret = secretPath
         _pendingKind = "edit"
         _isNewSecret = false
-        if (_passphrase !== "")
+        if (_pinentryDmsAvailable || _passphrase !== "")
             _loadForEdit()
         else
             _openPassphraseDialog()
@@ -526,7 +615,7 @@ QtObject {
                 root._pendingField = ""
                 root._pendingKind = "add"
                 root._pathDialog.hide()
-                if (root._passphrase !== "") {
+                if (root._pinentryDmsAvailable || root._passphrase !== "") {
                     root._isNewSecret = true
                     root._openEditDialog(root._pendingSecret, "")
                 } else {
@@ -542,16 +631,20 @@ QtObject {
             property string secretPath: ""
             property var lines: []
             command: [root.gopassBinary, "show", "-f", secretPath]
-            environment: ({
-                "GOPASS_AGE_PASSWORD": root._passphrase
-            })
+            environment: root._pinentryDmsAvailable
+                ? ({})
+                : ({ "GOPASS_AGE_PASSWORD": root._passphrase })
             stdout: SplitParser {
                 onRead: line => { lines.push(line) }
             }
             onExited: (exitCode) => {
-                if (exitCode === 0)
+                if (exitCode === 0) {
                     root._openEditDialog(secretPath, lines.join("\n"))
-                else {
+                } else if (root._pinentryDmsAvailable) {
+                    if (root._passphraseDialog && root._passphraseDialog.visible)
+                        root._passphraseDialog.hide()
+                    root._showToast("Failed to load secret for edit")
+                } else {
                     root._passphrase = ""
                     if (root._passphraseDialog && root._passphraseDialog.visible)
                         root._passphraseDialog.setError("Wrong passphrase, try again")
@@ -569,12 +662,10 @@ QtObject {
             property string editContent: ""
             property bool refreshAfter: false
             command: ["sh", "-c", "printf '%s' \"$EC\" | \"$GP\" insert -f \"$SP\""]
-            environment: ({
-                "EC": editContent,
-                "SP": secretPath,
-                "GP": root.gopassBinary,
-                "GOPASS_AGE_PASSWORD": root._passphrase
-            })
+            environment: root._pinentryDmsAvailable
+                ? ({ "EC": editContent, "SP": secretPath, "GP": root.gopassBinary })
+                : ({ "EC": editContent, "SP": secretPath, "GP": root.gopassBinary,
+                     "GOPASS_AGE_PASSWORD": root._passphrase })
             onExited: (exitCode) => {
                 if (exitCode === 0) {
                     if (root._editDialog) {
