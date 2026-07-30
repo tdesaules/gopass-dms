@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.2.2] - 2026-07-30
+
+### Fixed
+
+- **Vault corruption: newlines collapsed when saving edited/new secrets**
+  (regression from 2.2.0). In rich-text mode QtQuick's `TextEdit` represents
+  line breaks as `U+2029` (paragraph separator), which `getText()` hands back
+  verbatim. The live digit-colorization only converted `\n`/`\r` to `<br>`, so
+  raw `U+2029` survived into the re-injected HTML and was collapsed to spaces
+  by the HTML parser; the mangled text was then written to the vault. Fixes:
+  `_colorizeDigits` now converts every line-break flavor (`\r\n`, `\r`, `\n`,
+  `\u2028`, `\u2029`) to `<br>`, and the save path normalizes extracted text to
+  `\n` via `_normalizeText` as a belt-and-suspenders guard. Note: secrets
+  already corrupted before this fix must be re-edited manually.
+
 ## [2.2.1] - 2026-07-30
 
 ### Fixed

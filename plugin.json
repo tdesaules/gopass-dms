@@ -2,7 +2,7 @@
     "id": "gopassDms",
     "name": "GoPass DMS",
     "description": "Search, copy and edit gopass secrets (password, TOTP) from the DankMaterialShell launcher",
-    "version": "2.2.1",
+    "version": "2.2.2",
     "author": "tdesaules",
     "icon": "vpn_key",
     "type": "launcher",

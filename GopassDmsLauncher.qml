@@ -577,7 +577,7 @@ QtObject {
             _editDialog = editDialogComponent.createObject(root)
             _editDialog.saved.connect(function(newContent) {
                 _editDialog.saving = true
-                root._saveSecret(_editDialog.secretPath, newContent)
+                root._saveSecret(_editDialog.secretPath, root._normalizeText(newContent))
             })
         }
         _editDialog.secretPath = secretPath
@@ -749,8 +749,16 @@ QtObject {
             .replace(/&/g, "&amp;")
             .replace(/</g, "&lt;")
             .replace(/>/g, "&gt;")
-            .replace(/\r?\n/g, "<br>")
+            .replace(/\r\n|\r|\n|\u2028|\u2029/g, "<br>")
         return s.replace(/\d+/g, '<span style="color: #b48ead;">$&</span>')
+    }
+
+    // QtQuick's TextEdit represents line breaks as U+2029 (paragraph separator)
+    // in rich-text mode; getText() can hand those back raw. Normalize every
+    // flavor of line break to "\n" before writing the secret so the vault
+    // never ends up with collapsed or stray separator characters.
+    function _normalizeText(s) {
+        return String(s).replace(/\r\n|\r|\u2028|\u2029/g, "\n")
     }
 
     // --- Passphrase dialog (native DMS-styled FloatingWindow) ---
