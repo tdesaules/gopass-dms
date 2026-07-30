@@ -749,6 +749,7 @@ QtObject {
             .replace(/&/g, "&amp;")
             .replace(/</g, "&lt;")
             .replace(/>/g, "&gt;")
+            .replace(/\r?\n/g, "<br>")
         return s.replace(/\d+/g, '<span style="color: #b48ead;">$&</span>')
     }
 

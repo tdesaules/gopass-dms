@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.2.1] - 2026-07-30
+
+### Fixed
+
+- **Secret structure collapsed to a single line** in the **View secret** and
+  **Edit secret** windows (regression introduced in 2.2.0). The digit
+  highlighting switched the editor to rich-text mode, where raw `\n` newlines
+  are treated as collapsible whitespace, so multiline secrets rendered on one
+  line. `_colorizeDigits` now converts `\n` to `<br>`, restoring the original
+  line structure. The save path still emits plain text (round-trips through
+  `getText`, which maps `<br>` back to `\n`).
+
 ## [2.2.0] - 2026-07-30
 
 ### Added
