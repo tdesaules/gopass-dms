@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.2.0] - 2026-07-30
+
+### Added
+
+- **View secret** action in the launcher context menu (Tab), opening between
+  **Copy TOTP** and **Edit secret**. It loads the full secret content via
+  `gopass show -f` (reusing the existing passphrase/pinentry-dms unlock flow)
+  and renders it in a read-only native window. The text is selectable (for
+  manual copy) but cannot be modified.
+- **Digit highlighting** in both the **View secret** and **Edit secret**
+  windows: every run of digits is colored Nord purple (`#b48ead`) so numbers
+  (passwords, TOTP seeds, numeric values) stand out from letters. The editor
+  reformats live as you type, preserving the cursor position; the saved
+  content is the plain text (no markup leaked into the vault).
+
 ## [2.1.0] - 2026-07-02
 
 ### Added
@@ -124,6 +139,7 @@ Iterative development builds prior to the first stable release.
 - Multiple refactors of the plugin lifecycle and the async refresh mechanism
   (auto-refresh, manual refresh, request-launcher-update wiring).
 
+[2.2.0]: https://github.com/tdesaules/gopass-dms/releases/tag/v2.2.0
 [2.1.0]: https://github.com/tdesaules/gopass-dms/releases/tag/v2.1.0
 [2.0.0]: https://github.com/tdesaules/gopass-dms/releases/tag/v2.0.0
 [1.1.0]: https://github.com/tdesaules/gopass-dms/releases/tag/v1.1.0

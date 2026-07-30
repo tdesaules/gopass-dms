@@ -36,6 +36,7 @@ QtObject {
     property string _pendingField: ""
     property string _pendingKind: ""
     property var _passphraseDialog: null
+    property var _viewDialog: null
     property var _editDialog: null
     property var _confirmDialog: null
     property var _pathDialog: null
@@ -386,6 +387,11 @@ QtObject {
                 action: function() { root._copyTotp(secretPath) }
             })
             actions.push({
+                icon: "visibility",
+                text: "View secret",
+                action: function() { root._viewSecret(secretPath) }
+            })
+            actions.push({
                 icon: "edit",
                 text: "Edit secret",
                 action: function() { root._editSecret(secretPath) }
@@ -537,6 +543,16 @@ QtObject {
 
     // --- Secret editing (load via show -f, save via insert -f) ---
 
+    function _viewSecret(secretPath) {
+        _pendingSecret = secretPath
+        _pendingKind = "view"
+        _isNewSecret = false
+        if (_pinentryDmsAvailable || _passphrase !== "")
+            _loadForEdit()
+        else
+            _openPassphraseDialog()
+    }
+
     function _editSecret(secretPath) {
         _pendingSecret = secretPath
         _pendingKind = "edit"
@@ -567,6 +583,16 @@ QtObject {
         _editDialog.secretPath = secretPath
         _editDialog.originalContent = content
         _editDialog.show()
+    }
+
+    function _openViewDialog(secretPath, content) {
+        if (_passphraseDialog && _passphraseDialog.visible)
+            _passphraseDialog.hide()
+        if (!_viewDialog)
+            _viewDialog = viewDialogComponent.createObject(root)
+        _viewDialog.secretPath = secretPath
+        _viewDialog.originalContent = content
+        _viewDialog.show()
     }
 
     function _saveSecret(secretPath, content) {
@@ -639,17 +665,24 @@ QtObject {
             }
             onExited: (exitCode) => {
                 if (exitCode === 0) {
-                    root._openEditDialog(secretPath, lines.join("\n"))
+                    if (root._pendingKind === "view")
+                        root._openViewDialog(secretPath, lines.join("\n"))
+                    else
+                        root._openEditDialog(secretPath, lines.join("\n"))
                 } else if (root._pinentryDmsAvailable) {
                     if (root._passphraseDialog && root._passphraseDialog.visible)
                         root._passphraseDialog.hide()
-                    root._showToast("Failed to load secret for edit")
+                    root._showToast(root._pendingKind === "view"
+                        ? "Failed to load secret for view"
+                        : "Failed to load secret for edit")
                 } else {
                     root._passphrase = ""
                     if (root._passphraseDialog && root._passphraseDialog.visible)
                         root._passphraseDialog.setError("Wrong passphrase, try again")
                     else
-                        root._showToast("Failed to load secret for edit")
+                        root._showToast(root._pendingKind === "view"
+                            ? "Failed to load secret for view"
+                            : "Failed to load secret for edit")
                 }
                 destroy()
             }
@@ -711,6 +744,14 @@ QtObject {
             console.log("GopassDms:", message)
     }
 
+    function _colorizeDigits(plain) {
+        var s = String(plain)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+        return s.replace(/\d+/g, '<span style="color: #b48ead;">$&</span>')
+    }
+
     // --- Passphrase dialog (native DMS-styled FloatingWindow) ---
 
     function _openPassphraseDialog() {
@@ -720,6 +761,8 @@ QtObject {
                 root._passphrase = value
                 if (root._pendingKind === "edit") {
                     root._isNewSecret = false
+                    root._loadForEdit()
+                } else if (root._pendingKind === "view") {
                     root._loadForEdit()
                 } else if (root._pendingKind === "add") {
                     root._isNewSecret = true
@@ -736,6 +779,8 @@ QtObject {
         var label
         if (_pendingKind === "totp")
             label = "Generating TOTP: " + _pendingSecret
+        else if (_pendingKind === "view")
+            label = "Loading for view: " + _pendingSecret
         else if (_pendingKind === "edit")
             label = "Loading for edit: " + _pendingSecret
         else if (_pendingKind === "add")
@@ -849,6 +894,119 @@ QtObject {
         }
     }
 
+    // --- View dialog (read-only FloatingWindow, colorized digits) ---
+
+    property Component viewDialogComponent: Component {
+        FloatingWindow {
+            id: viewDlg
+            visible: false
+            implicitWidth: 620
+            implicitHeight: 310
+            title: "Gopass View Secret"
+            color: Theme.surfaceContainer
+
+            property string secretPath: ""
+            property string originalContent: ""
+
+            function show() {
+                viewArea.text = root._colorizeDigits(viewDlg.originalContent)
+                visible = true
+            }
+            function hide() { visible = false }
+
+            onClosed: viewDlg.visible = false
+
+            Row {
+                id: viewHeader
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.margins: Theme.spacingL
+                spacing: Theme.spacingS
+
+                DankIcon {
+                    name: "visibility"
+                    size: Theme.iconSize
+                    color: Theme.primary
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+                StyledText {
+                    text: viewDlg.secretPath
+                    font.pixelSize: Theme.fontSizeLarge
+                    font.weight: Font.Bold
+                    color: Theme.surfaceText
+                    elide: Text.ElideRight
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+            }
+
+            Flickable {
+                id: viewFlick
+                anchors.top: viewHeader.bottom
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: viewCloseRow.top
+                anchors.margins: Theme.spacingL
+                clip: true
+                flickableDirection: Flickable.VerticalFlick
+                contentHeight: Math.max(viewArea.implicitHeight, viewFlick.height)
+
+                TextEdit {
+                    id: viewArea
+                    width: viewFlick.width
+                    wrapMode: TextEdit.Wrap
+                    textFormat: TextEdit.RichText
+                    readOnly: true
+                    activeFocusOnTab: true
+                    text: ""
+                    font.family: "monospace"
+                    font.pixelSize: Theme.fontSizeSmall
+                    color: Theme.surfaceText
+                    selectionColor: Theme.withAlpha(Theme.primary, 0.4)
+                    selectedTextColor: Theme.surfaceText
+                    Keys.onEscapePressed: viewDlg.hide()
+                    Keys.onPressed: event => {
+                        if ((event.modifiers & Qt.ControlModifier) && (event.key === Qt.Key_A)) {
+                            viewArea.selectAll()
+                            event.accepted = true
+                        }
+                    }
+                }
+            }
+
+            Row {
+                id: viewCloseRow
+                anchors.bottom: parent.bottom
+                anchors.right: parent.right
+                anchors.margins: Theme.spacingL
+                spacing: Theme.spacingS
+
+                Rectangle {
+                    width: 110
+                    height: 38
+                    radius: Theme.cornerRadius
+                    color: viewCloseArea.containsMouse ? Theme.withAlpha(Theme.primary, 0.2) : Theme.withAlpha(Theme.primary, 0.12)
+                    border.color: Theme.primary
+                    border.width: 1
+                    StyledText {
+                        anchors.centerIn: parent
+                        text: "Close"
+                        color: Theme.primary
+                        font.weight: Font.Bold
+                        font.pixelSize: Theme.fontSizeMedium
+                    }
+                    MouseArea {
+                        id: viewCloseArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: viewDlg.hide()
+                    }
+                }
+            }
+        }
+    }
+
     // --- Edit dialog (FloatingWindow with a multiline editor) ---
 
     property Component editDialogComponent: Component {
@@ -868,7 +1026,9 @@ QtObject {
             signal cancelled()
 
             function show() {
-                editor.text = editDlg.originalContent
+                editor._updating = true
+                editor.text = root._colorizeDigits(editDlg.originalContent)
+                editor._updating = false
                 saving = false
                 visible = true
                 Qt.callLater(function() { editor.forceActiveFocus() })
@@ -917,6 +1077,7 @@ QtObject {
                     id: editor
                     width: flick.width
                     wrapMode: TextEdit.Wrap
+                    textFormat: TextEdit.RichText
                     text: ""
                     font.family: "monospace"
                     font.pixelSize: Theme.fontSizeSmall
@@ -925,9 +1086,21 @@ QtObject {
                     selectedTextColor: Theme.surfaceText
                     focus: true
                     enabled: !editDlg.saving
+                    property bool _updating: false
+                    onTextChanged: {
+                        if (_updating)
+                            return
+                        _updating = true
+                        var plain = getText(0, length)
+                        var html = root._colorizeDigits(plain)
+                        var cur = cursorPosition
+                        text = html
+                        cursorPosition = Math.min(cur, length)
+                        _updating = false
+                    }
                     Keys.onPressed: event => {
                         if (!editDlg.saving && (event.modifiers & Qt.ControlModifier) && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)) {
-                            editDlg.saved(editor.text)
+                            editDlg.saved(editor.getText(0, editor.length))
                             event.accepted = true
                         }
                     }
@@ -992,7 +1165,7 @@ QtObject {
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
                         enabled: !editDlg.saving
-                        onClicked: editDlg.saved(editor.text)
+                        onClicked: editDlg.saved(editor.getText(0, editor.length))
                     }
                 }
             }

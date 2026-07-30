@@ -24,6 +24,10 @@ Two ways to unlock (auto-detected at load):
   - TOTP code (`gopass totp -c`)
 - **Edit secret** — a native editor window loads the full content and saves it back
   (`gopass show -f` → `gopass insert -f`)
+- **View secret** — a read-only window shows the full content (selectable but not
+  editable), handy for inspecting a secret without risk of changing it
+- **Digit highlighting** — in both the View and Edit windows, runs of digits are
+  colored Nord purple (`#b48ead`) so numbers stand out from letters
 - **Add new secret** — a path-entry popup, then the editor, to create a new
   secret (`gopass insert -f`)
 - **Delete secret** — a confirmation popup guards `gopass rm -f`
@@ -119,7 +123,8 @@ dms restart
   | **Copy password** | `gopass show -c` |
   | **Copy username** | Copies the `username` body field |
   | **Copy TOTP** | `gopass totp -c` (requires a `totp:` entry, see below) |
-  | **Edit secret** | Opens a native editor window |
+  | **View secret** | Opens a read-only window (digits highlighted) |
+  | **Edit secret** | Opens a native editor window (digits highlighted) |
   | **Delete secret** | `gopass rm -f` (with confirmation) |
   | **Add new secret** | Path popup → editor → `gopass insert -f` |
   | **Sync vault** | `gopass sync` then reloads the cache |
